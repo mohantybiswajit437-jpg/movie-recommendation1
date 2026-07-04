@@ -1,32 +1,35 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from database import init_db, save_search
 import pandas as pd
 import pickle
 
-init_db()
 # ==========================================
-# Create FastAPI App
+# Initialize Database
+# ==========================================
+
+init_db()
+
+# ==========================================
+# FastAPI App
 # ==========================================
 
 app = FastAPI(
-    title="🎬 Movie Recommendation API",
+    title="Movie Recommendation API",
     description="Content-Based Movie Recommendation System",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # ==========================================
-# Load Files
+# Load ML Files (Loads only once)
 # ==========================================
 
 movies = pd.read_pickle("movies.pkl")
 
-model = pickle.load(open("recommendation_model.pkl", "rb"))
+with open("recommendation_model.pkl", "rb") as f:
+    model = pickle.load(f)
 
-tfidf_matrix = pickle.load(open("tfidf_matrix.pkl", "rb"))
-
-# ==========================================
-# Create Movie Index
-# ==========================================
+with open("tfidf_matrix.pkl", "rb") as f:
+    tfidf_matrix = pickle.load(f)
 
 indices = pd.Series(
     movies.index,
@@ -34,13 +37,15 @@ indices = pd.Series(
 ).drop_duplicates()
 
 # ==========================================
-# Home API
+# Home
 # ==========================================
 
 @app.get("/")
 def home():
     return {
-        "message": "Movie Recommendation API is Running 🚀"
+        "status": "success",
+        "message": "Movie Recommendation API is running 🚀",
+        "version": "2.0.0"
     }
 
 # ==========================================
@@ -50,7 +55,30 @@ def home():
 @app.get("/movies")
 def get_movies():
 
-    return movies["title"].tolist()
+    return {
+        "count": len(movies),
+        "movies": sorted(movies["title"].tolist())
+    }
+
+# ==========================================
+# Search Movies
+# ==========================================
+
+@app.get("/search/{movie_name}")
+def search_movie(movie_name: str):
+
+    result = movies[
+        movies["title"].str.contains(
+            movie_name,
+            case=False,
+            na=False
+        )
+    ][["title"]].head(20)
+
+    return {
+        "count": len(result),
+        "results": result.to_dict(orient="records")
+    }
 
 # ==========================================
 # Recommend Movies
@@ -61,9 +89,12 @@ def recommend(movie_name: str):
 
     if movie_name not in indices:
 
-        return {
-            "error": "Movie not found."
-        }
+        raise HTTPException(
+            status_code=404,
+            detail="Movie not found."
+        )
+
+    save_search(movie_name)
 
     idx = indices[movie_name]
 
@@ -84,7 +115,7 @@ def recommend(movie_name: str):
 
             "title": movie["title"],
 
-            "genre": movie.get("genres", "Unknown"),
+            "genres": movie.get("genres", ""),
 
             "rating": float(movie.get("vote_average", 0)),
 
@@ -98,31 +129,14 @@ def recommend(movie_name: str):
 
         })
 
-    return recommendations
-
-# ==========================================
-# Search Movie
-# ==========================================
-
-@app.get("/search/{movie_name}")
-def search_movie(movie_name: str):
-
-    result = movies[
-        movies["title"].str.contains(
-            movie_name,
-            case=False,
-            na=False
-        )
-    ][["title"]].head(20)
-
-    return result.to_dict(orient="records")
-
-@app.get("/recommend/{movie}")
-def recommend(movie: str):
-
-    save_search(movie)
-
     return {
-        "movie": movie,
-        "recommendations": ["Titanic", "Inception"]
+
+        "status": "success",
+
+        "searched_movie": movie_name,
+
+        "total_recommendations": len(recommendations),
+
+        "recommendations": recommendations
+
     }
