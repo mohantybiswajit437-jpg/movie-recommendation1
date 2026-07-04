@@ -23,7 +23,7 @@ st.write(
 # GEMINI API
 # ===========================================
 
-genai.configure(api_key="Your API Key")
+genai.configure(api_key="Your API")
 
 gemini = genai.GenerativeModel("gemini-2.5-flash")
 
