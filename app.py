@@ -1,159 +1,135 @@
 import streamlit as st
-import pandas as pd
-import pickle
+import requests
 
-# --------------------------
-# Page Configuration
-# --------------------------
+# ==========================================================
+# Configuration
+# ==========================================================
+
+API_URL = "https://movie-recommendation1-7.onrender.com"
 
 st.set_page_config(
-    page_title="AI Movie Recommendation System",
+    page_title="🎬 AI Movie Recommendation",
     page_icon="🎬",
     layout="wide"
 )
 
-# --------------------------
-# Load Files
-# --------------------------
+# ==========================================================
+# Load Movies from API
+# ==========================================================
 
-movies = pd.read_pickle("movies.pkl")
+@st.cache_data
+def load_movies():
+    try:
+        response = requests.get(f"{API_URL}/movies", timeout=30)
+        response.raise_for_status()
+        return response.json()["movies"]
+    except Exception:
+        return []
 
-model = pickle.load(open("recommendation_model.pkl", "rb"))
+movies = load_movies()
 
-tfidf_matrix = pickle.load(open("tfidf_matrix.pkl", "rb"))
-
-# --------------------------
-# Create Index
-# --------------------------
-
-indices = pd.Series(
-    movies.index,
-    index=movies["title"]
-).drop_duplicates()
-
-# --------------------------
-# Recommendation Function
-# --------------------------
-
-def recommend(movie):
-
-    idx = indices[movie]
-
-    distances, neighbors = model.kneighbors(
-        tfidf_matrix[idx],
-        n_neighbors=11
-    )
-
-    return movies.iloc[
-        neighbors[0][1:]
-    ]
-
-# --------------------------
+# ==========================================================
 # Sidebar
-# --------------------------
+# ==========================================================
 
-st.sidebar.title("🎬 Movie Recommender")
+st.sidebar.title("🎬 Movie Recommendation")
 
 page = st.sidebar.radio(
     "Navigation",
     [
         "Home",
-        "Dashboard",
         "About"
     ]
 )
 
-# ==========================
+# ==========================================================
 # HOME
-# ==========================
+# ==========================================================
 
 if page == "Home":
 
     st.title("🎬 AI Movie Recommendation System")
 
     st.write(
-        "Find similar movies using Machine Learning."
+        "Get movie recommendations using Machine Learning powered by FastAPI."
     )
+
+    if not movies:
+        st.error("Unable to connect to the API.")
+        st.stop()
 
     movie = st.selectbox(
         "Choose a Movie",
-        sorted(movies["title"].unique())
+        movies
     )
 
     if st.button("Recommend"):
 
-        result = recommend(movie)
+        with st.spinner("Finding similar movies..."):
 
-        st.success("Top Recommendations")
+            try:
 
-        cols = st.columns(2)
+                response = requests.get(
+                    f"{API_URL}/recommend/{movie}",
+                    timeout=60
+                )
 
-        for i, (_, row) in enumerate(result.iterrows()):
+                response.raise_for_status()
 
-            with cols[i % 2]:
+                data = response.json()
 
-                st.subheader(row["title"])
+                recommendations = data["recommendations"]
 
-                if "genres" in result.columns:
-                    st.write("🎭", row["genres"])
+                st.success(
+                    f"Top {len(recommendations)} Recommendations"
+                )
 
-                if "vote_average" in result.columns:
-                    st.write("⭐", row["vote_average"])
+                cols = st.columns(2)
 
-                if "overview" in result.columns:
-                    st.write(row["overview"][:200] + "...")
+                for i, rec in enumerate(recommendations):
 
-                st.divider()
+                    with cols[i % 2]:
 
-# ==========================
-# DASHBOARD
-# ==========================
+                        poster = rec.get("poster_path", "")
 
-elif page == "Dashboard":
+                        if poster:
 
-    st.title("📊 Dashboard")
+                            st.image(
+                                f"https://image.tmdb.org/t/p/w500{poster}",
+                                use_container_width=True
+                            )
 
-    col1, col2, col3 = st.columns(3)
+                        st.subheader(rec["title"])
 
-    col1.metric(
-        "Movies",
-        len(movies)
-    )
+                        st.write(
+                            f"⭐ Rating : {rec['rating']}"
+                        )
 
-    if "original_language" in movies.columns:
-        col2.metric(
-            "Languages",
-            movies["original_language"].nunique()
-        )
+                        st.write(
+                            f"🎭 Genre : {rec['genres']}"
+                        )
 
-    if "genres" in movies.columns:
-        col3.metric(
-            "Genres",
-            movies["genres"].nunique()
-        )
+                        st.write(
+                            f"🌍 Language : {rec['language']}"
+                        )
 
-    st.subheader("Top Rated Movies")
+                        st.write(
+                            f"📅 Release : {rec['release_date'][:10]}"
+                        )
 
-    if "vote_average" in movies.columns:
+                        st.write(rec["overview"])
 
-        st.dataframe(
+                        st.divider()
 
-            movies[
-                ["title", "vote_average"]
-            ]
+            except Exception as e:
 
-            .sort_values(
-                "vote_average",
-                ascending=False
-            )
+                st.error("Unable to get recommendations.")
 
-            .head(20)
+                st.exception(e)
 
-        )
-
-# ==========================
+# ==========================================================
 # ABOUT
-# ==========================
+# ==========================================================
 
 else:
 
@@ -161,22 +137,29 @@ else:
 
     st.markdown("""
 
-## AI Movie Recommendation System
+## 🎬 AI Movie Recommendation System
 
-### Built Using
+### Architecture
+
+Streamlit Frontend
+
+⬇
+
+FastAPI Backend (Render)
+
+⬇
+
+Machine Learning Model
+
+### Technologies
 
 - Python
-- Pandas
+- FastAPI
+- Streamlit
 - Scikit-Learn
 - TF-IDF
 - Nearest Neighbors
-- Streamlit
-
-### Features
-
-- Movie Recommendation
-- Dashboard
-- Machine Learning
-- NLP
+- Render
+- GitHub
 
 """)
